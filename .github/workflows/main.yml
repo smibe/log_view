@@ -24,10 +24,10 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
     - uses: actions/checkout@v2
+    - uses: ilammy/msvc-dev-cmd@v1
     - uses: subosito/flutter-action@v1
       with:
-        channel: beta
-    - run: flutter config --enable-web
+        channel: dev
+    - run: flutter config --enable-windows-desktop
     - run: flutter pub get
-    - run: flutter test
     - run: flutter build web
