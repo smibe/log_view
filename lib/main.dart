@@ -68,8 +68,7 @@ class ScrollLineDownIntent extends Intent {}
 class FindIntent extends Intent {}
 
 class _MyHomePageState extends State<MyHomePage> {
-  var items =
-      List<String>.generate(10000, (i) => i % 5 == 0 ? "error $i" : "Item $i");
+  var items = List<String>.empty();
 
   var search = "Scan Job";
   var directory = "c:/temp/logs/";
@@ -214,7 +213,8 @@ class _MyHomePageState extends State<MyHomePage> {
     if (idx > items.length - 1) idx = items.length - 1;
 
     int diff = idx - itemPositionsListener.itemPositions.value.last.index + 1;
-    if (diff > 0 && itemPositionsListener.itemPositions.value.first.index > 0) {
+    if (diff > 0 &&
+        itemPositionsListener.itemPositions.value.last.index < items.length) {
       itemScrollController.jumpTo(
           index: itemPositionsListener.itemPositions.value.first.index + diff);
     }
@@ -249,6 +249,19 @@ class _MyHomePageState extends State<MyHomePage> {
       return true;
     }
     return false;
+  }
+
+  void loadFilter(String content) {
+    if (content == null) return;
+    if (content == "") this.filters = [];
+    var settings = json.decode(content);
+    var jsonFilter = settings["filter"] as List<dynamic>;
+    var f = jsonFilter.map((e) => FilterEntry.fromJson(e));
+    setState(() {
+      this.filters = f.toList();
+      if (filters.length == 1 && filters[0].pattern == "myFilteredString")
+        filters.clear();
+    });
   }
 
   void findNext() {
@@ -321,6 +334,8 @@ class _MyHomePageState extends State<MyHomePage> {
       this.setState(() {
         items = value;
       });
+      var settingsFile = File(directory + "log_view.config");
+      settingsFile.readAsString().then((value) => loadFilter(value));
     });
     return Scaffold(
         appBar: AppBar(
@@ -349,17 +364,7 @@ class _MyHomePageState extends State<MyHomePage> {
   ]
 }
 """);
-                  if (content == null) return;
-                  if (content == "") this.filters = [];
-                  var settings = json.decode(content);
-                  var jsonFilter = settings["filter"] as List<dynamic>;
-                  var f = jsonFilter.map((e) => FilterEntry.fromJson(e));
-                  setState(() {
-                    this.filters = f.toList();
-                    if (filters.length == 1 &&
-                        filters[0].pattern == "myFilteredString")
-                      filters.clear();
-                  });
+                  loadFilter(content);
                 }),
             Container(width: 60, child: Text("")),
             editSearch
