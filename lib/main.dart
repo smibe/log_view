@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:io';
 import 'dart:ui';
 
@@ -68,7 +69,7 @@ class ScrollLineDownIntent extends Intent {}
 class FindIntent extends Intent {}
 
 class _MyHomePageState extends State<MyHomePage> {
-  var items = List<String>.empty();
+  var items = [""];
 
   var search = "Scan Job";
   var directory = "c:/temp/logs/";
@@ -93,8 +94,9 @@ class _MyHomePageState extends State<MyHomePage> {
     for (var f in files) {
       File data = new File(directory + f);
       if (!data.existsSync()) continue;
-      var lines = await data.readAsLines();
+      var lines = await readLines(data);
       var filtered = lines.where((line) {
+        if (line.isEmpty) return false;
         for (var f in filters) {
           if (f.method == FilterMethod.Deny && line.contains(f.pattern))
             return false;
@@ -103,10 +105,16 @@ class _MyHomePageState extends State<MyHomePage> {
         }
         return true;
       });
-
       items.addAll(filtered);
     }
     return items;
+  }
+
+  Future<List<String>> readLines(File file) async {
+    try {
+      return await file.readAsLines();
+    } catch (e) {}
+    return await file.readAsLines(encoding: systemEncoding);
   }
 
   Color getColor(String line) {
