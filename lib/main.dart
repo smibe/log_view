@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'dart:ui';
-
+import 'package:path/path.dart' as path;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -74,10 +74,10 @@ class _MyHomePageState extends State<MyHomePage> {
   var search = "Scan Job";
   var directory = "c:/temp/logs/";
   var files = [
-    "EndpointProtectionService.log",
     "EndpointProtectionService.3.log",
     "EndpointProtectionService.2.log",
     "EndpointProtectionService.1.log",
+    "EndpointProtectionService.log"
   ];
   var currentSearchIdx = 100;
   Map<LogicalKeySet, Intent> shortcuts;
@@ -173,6 +173,17 @@ class _MyHomePageState extends State<MyHomePage> {
         return null;
       }),
     };
+    var settingsFile = File(directory + "log_view.config");
+    settingsFile
+        .readAsString()
+        .then((value) => loadFilter(value))
+        .whenComplete(() {
+      getContent().then((value) {
+        this.setState(() {
+          items = value;
+        });
+      });
+    });
     super.initState();
   }
 
@@ -338,13 +349,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    getContent().then((value) {
-      this.setState(() {
-        items = value;
-      });
-      var settingsFile = File(directory + "log_view.config");
-      settingsFile.readAsString().then((value) => loadFilter(value));
-    });
     return Scaffold(
         appBar: AppBar(
           title: Tooltip(
@@ -423,18 +427,18 @@ class _MyHomePageState extends State<MyHomePage> {
             GestureDetector(
               child: Icon(Icons.settings),
               onTap: () async {
-                var content = await editSettingsFile(
-                    (await getApplicationDocumentsDirectory()).toString() +
-                        "log_view.config",
-                    "Edit settings",
+                var fileName = path.join(
+                    (await getApplicationDocumentsDirectory()).toString(),
+                    "log_view.config");
+                var content = await editSettingsFile(fileName, "Edit settings",
                     initial: """
 {
   "directory":"c:/temp/logs/",
   "files":[
-    "EndpointProtectionService.log", 
     "EndpointProtectionService.3.log", 
     "EndpointProtectionService.2.log", 
-    "EndpointProtectionService.1.log"
+    "EndpointProtectionService.1.log",
+    "EndpointProtectionService.log", 
   ]
 }
 """);
