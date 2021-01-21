@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'dart:ui';
+import 'package:log_view/scroll_handler.dart';
 import 'package:path/path.dart' as path;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,11 +24,7 @@ class FilterEntry {
   String pattern;
   FilterMethod method;
   static FilterEntry fromJson(dynamic e) {
-    return FilterEntry(
-        e["pattern"],
-        (e["method"] as String) == "allow"
-            ? FilterMethod.Allow
-            : FilterMethod.Deny);
+    return FilterEntry(e["pattern"], (e["method"] as String) == "allow" ? FilterMethod.Allow : FilterMethod.Deny);
   }
 }
 
@@ -54,22 +51,11 @@ class MyHomePage extends StatefulWidget {
   _MyHomePageState createState() => _MyHomePageState();
 }
 
-class ScrollPageUpIntent extends Intent {}
-
-class ScrollPageDownIntent extends Intent {}
-
-class ScrollToBottomIntent extends Intent {}
-
-class ScrollToTopIntent extends Intent {}
-
-class ScrollLineUpIntent extends Intent {}
-
-class ScrollLineDownIntent extends Intent {}
-
 class FindIntent extends Intent {}
 
 class _MyHomePageState extends State<MyHomePage> {
   var items = [""];
+  var scrollHandler;
 
   var search = "Scan Job";
   var directory = "c:/temp/logs/";
@@ -98,10 +84,8 @@ class _MyHomePageState extends State<MyHomePage> {
       var filtered = lines.where((line) {
         if (line.isEmpty) return false;
         for (var f in filters) {
-          if (f.method == FilterMethod.Deny && line.contains(f.pattern))
-            return false;
-          if (f.method == FilterMethod.Allow && !line.contains(f.pattern))
-            return false;
+          if (f.method == FilterMethod.Deny && line.contains(f.pattern)) return false;
+          if (f.method == FilterMethod.Allow && !line.contains(f.pattern)) return false;
         }
         return true;
       });
@@ -126,58 +110,38 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Color getBackground(int idx) {
     var line = items[idx];
-    if (search != "" && line.contains(search))
-      return Color.fromARGB(100, 190, 190, 0);
-    if (idx == currentIdx) return Color.fromARGB(255, 230, 230, 230);
+    if (search != "" && line.contains(search)) return Color.fromARGB(100, 190, 190, 0);
+    if (idx == scrollHandler.currentIdx) return Color.fromARGB(255, 230, 230, 230);
     return Colors.white;
   }
 
+  int getItemCount() => items.length;
+
   @override
   void initState() {
+    this.scrollHandler = ScrollHandler(setState, getItemCount);
     this.findController.text = search;
     shortcuts = <LogicalKeySet, Intent>{
-      LogicalKeySet(LogicalKeyboardKey.pageUp, LogicalKeyboardKey.control):
-          ScrollPageUpIntent(),
-      LogicalKeySet(LogicalKeyboardKey.keyJ, LogicalKeyboardKey.control):
-          ScrollPageUpIntent(),
-      LogicalKeySet(LogicalKeyboardKey.pageDown, LogicalKeyboardKey.control):
-          ScrollPageDownIntent(),
-      LogicalKeySet(LogicalKeyboardKey.keyK, LogicalKeyboardKey.control):
-          ScrollPageDownIntent(),
-      LogicalKeySet(LogicalKeyboardKey.end, LogicalKeyboardKey.control):
-          ScrollToBottomIntent(),
-      LogicalKeySet(LogicalKeyboardKey.home, LogicalKeyboardKey.control):
-          ScrollToTopIntent(),
+      LogicalKeySet(LogicalKeyboardKey.pageUp, LogicalKeyboardKey.control): ScrollPageUpIntent(),
+      LogicalKeySet(LogicalKeyboardKey.keyJ, LogicalKeyboardKey.control): ScrollPageUpIntent(),
+      LogicalKeySet(LogicalKeyboardKey.pageDown, LogicalKeyboardKey.control): ScrollPageDownIntent(),
+      LogicalKeySet(LogicalKeyboardKey.keyK, LogicalKeyboardKey.control): ScrollPageDownIntent(),
+      LogicalKeySet(LogicalKeyboardKey.end, LogicalKeyboardKey.control): ScrollToBottomIntent(),
+      LogicalKeySet(LogicalKeyboardKey.home, LogicalKeyboardKey.control): ScrollToTopIntent(),
       LogicalKeySet(LogicalKeyboardKey.arrowUp): ScrollLineUpIntent(),
       LogicalKeySet(LogicalKeyboardKey.arrowDown): ScrollLineDownIntent(),
-      LogicalKeySet(LogicalKeyboardKey.keyF, LogicalKeyboardKey.control):
-          FindIntent(),
+      LogicalKeySet(LogicalKeyboardKey.keyF, LogicalKeyboardKey.control): FindIntent(),
     };
     actions = <Type, Action<Intent>>{
-      ScrollPageUpIntent: CallbackAction(
-        onInvoke: (Intent intent) => scrollPageUp(),
-      ),
-      ScrollPageDownIntent: CallbackAction(
-        onInvoke: (Intent intent) => scrollPageDown(),
-      ),
-      ScrollToBottomIntent:
-          CallbackAction(onInvoke: (Intent intent) => scrollToBottom()),
-      ScrollToTopIntent:
-          CallbackAction(onInvoke: (Intent intent) => scrollToTop()),
-      ScrollLineUpIntent:
-          CallbackAction(onInvoke: (Intent intent) => scrollLineUp()),
-      ScrollLineDownIntent:
-          CallbackAction(onInvoke: (Intent intent) => scrollLineDown()),
       FindIntent: CallbackAction(onInvoke: (Intent intent) {
         editSearchString();
         return null;
       }),
     };
+    actions.addAll(scrollHandler.actions);
+
     var settingsFile = File(directory + "log_view.config");
-    settingsFile
-        .readAsString()
-        .then((value) => loadFilter(value))
-        .whenComplete(() {
+    settingsFile.readAsString().then((value) => loadFilter(value)).whenComplete(() {
       getContent().then((value) {
         this.setState(() {
           items = value;
@@ -187,65 +151,8 @@ class _MyHomePageState extends State<MyHomePage> {
     super.initState();
   }
 
-  void scrollPageUp() {
-    int count = itemPositionsListener.itemPositions.value.last.index -
-        itemPositionsListener.itemPositions.value.first.index;
-
-    int idx =
-        itemPositionsListener.itemPositions.value.first.index - count * 3 ~/ 4;
-    if (idx < 0) idx = 0;
-    itemScrollController.jumpTo(index: idx);
-  }
-
-  void scrollToTop() {
-    itemScrollController.jumpTo(index: 0);
-  }
-
-  void scrollToBottom() {
-    itemScrollController.jumpTo(index: items.length);
-  }
-
-  void scrollPageDown() {
-    int count = itemPositionsListener.itemPositions.value.last.index -
-        itemPositionsListener.itemPositions.value.first.index;
-
-    int idx =
-        itemPositionsListener.itemPositions.value.first.index + count * 3 ~/ 4;
-    if (idx > items.length - 1) idx = items.length - 1;
-    itemScrollController.jumpTo(index: idx);
-  }
-
-  int currentIdx = 0;
-  void scrollLineUp() {
-    int idx = currentIdx - 1;
-    if (idx < 0) idx = 0;
-
-    if (idx < itemPositionsListener.itemPositions.value.first.index)
-      itemScrollController.jumpTo(index: idx);
-    setState(() {
-      currentIdx = idx;
-    });
-  }
-
-  void scrollLineDown() {
-    int idx = currentIdx + 1;
-    if (idx > items.length - 1) idx = items.length - 1;
-
-    int diff = idx - itemPositionsListener.itemPositions.value.last.index + 1;
-    if (diff > 0 &&
-        itemPositionsListener.itemPositions.value.last.index < items.length) {
-      itemScrollController.jumpTo(
-          index: itemPositionsListener.itemPositions.value.first.index + diff);
-    }
-    setState(() {
-      currentIdx = idx;
-    });
-  }
-
   var findController = TextEditingController();
   var editSearch = false;
-  var itemScrollController = ItemScrollController();
-  var itemPositionsListener = ItemPositionsListener.create();
 
   void editSearchString() {
     setState(() {
@@ -259,11 +166,7 @@ class _MyHomePageState extends State<MyHomePage> {
     if (items[idx].contains(search)) {
       setState(() {
         currentSearchIdx = idx;
-        if (idx <= itemPositionsListener.itemPositions.value.first.index ||
-            itemPositionsListener.itemPositions.value.last.index <= idx) {
-          itemScrollController.jumpTo(
-              index: currentSearchIdx <= 3 ? 0 : currentSearchIdx - 2);
-        }
+        scrollHandler.ensureVisible(idx);
       });
       return true;
     }
@@ -278,8 +181,7 @@ class _MyHomePageState extends State<MyHomePage> {
     var f = jsonFilter.map((e) => FilterEntry.fromJson(e));
     setState(() {
       this.filters = f.toList();
-      if (filters.length == 1 && filters[0].pattern == "myFilteredString")
-        filters.clear();
+      if (filters.length == 1 && filters[0].pattern == "myFilteredString") filters.clear();
     });
   }
 
@@ -301,8 +203,7 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  Future<String> editSettingsFile(String filePath, String title,
-      {String initial}) async {
+  Future<String> editSettingsFile(String filePath, String title, {String initial}) async {
     var settingFile = File(filePath);
     String content = "";
     if (settingFile.existsSync()) {
@@ -351,14 +252,11 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: AppBar(
-          title: Tooltip(
-              message: "EndpointProtectionService", child: Text(widget.title)),
+          title: Tooltip(message: "EndpointProtectionService", child: Text(widget.title)),
           actions: <Widget>[
             for (var f in filters)
               Container(
-                  color: f.method == FilterMethod.Allow
-                      ? Colors.green
-                      : Colors.red,
+                  color: f.method == FilterMethod.Allow ? Colors.green : Colors.red,
                   alignment: Alignment.center,
                   margin: EdgeInsets.all(12),
                   padding: EdgeInsets.fromLTRB(10, 0, 10, 0),
@@ -367,9 +265,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 child: Icon(Icons.filter_list_alt),
                 onTap: () async {
                   var settingFile = directory + "log_view.config";
-                  var content = await editSettingsFile(
-                      settingFile, "Edit filter",
-                      initial: """
+                  var content = await editSettingsFile(settingFile, "Edit filter", initial: """
 {
   "filter": [
     {"pattern":"myFilteredString", "method":"deny"}
@@ -410,28 +306,21 @@ class _MyHomePageState extends State<MyHomePage> {
                         ),
                         onTap: editSearchString,
                       ),
-                      Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            GestureDetector(
-                                child: Icon(Icons.navigate_next),
-                                onTap: findNext),
-                            GestureDetector(
-                              child: Icon(Icons.navigate_before),
-                              onTap: findPrevious,
-                            )
-                          ])
+                      Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        GestureDetector(child: Icon(Icons.navigate_next), onTap: findNext),
+                        GestureDetector(
+                          child: Icon(Icons.navigate_before),
+                          onTap: findPrevious,
+                        )
+                      ])
                     ],
                   ),
             Container(width: 20, child: Text("")),
             GestureDetector(
               child: Icon(Icons.settings),
               onTap: () async {
-                var fileName = path.join(
-                    (await getApplicationDocumentsDirectory()).toString(),
-                    "log_view.config");
-                var content = await editSettingsFile(fileName, "Edit settings",
-                    initial: """
+                var fileName = path.join((await getApplicationDocumentsDirectory()).toString(), "log_view.config");
+                var content = await editSettingsFile(fileName, "Edit settings", initial: """
 {
   "directory":"c:/temp/logs/",
   "files":[
@@ -463,8 +352,8 @@ class _MyHomePageState extends State<MyHomePage> {
           child: ScrollablePositionedList.builder(
             initialScrollIndex: currentSearchIdx > 0 ? currentSearchIdx - 1 : 0,
             padding: const EdgeInsets.all(20.0),
-            itemScrollController: itemScrollController,
-            itemPositionsListener: itemPositionsListener,
+            itemScrollController: scrollHandler.itemScrollController,
+            itemPositionsListener: scrollHandler.itemPositionsListener,
             itemCount: items.length,
             itemBuilder: (context, idx) {
               if (currentSearchIdx == idx) {
@@ -480,7 +369,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 return GestureDetector(
                   onDoubleTap: () {
                     setState(() {
-                      currentIdx = idx;
+                      scrollHandler.currentIdx = idx;
                     });
                   },
                   child: Container(
