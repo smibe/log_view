@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:developer';
 import 'dart:io';
 import 'dart:ui';
 import 'package:log_view/scroll_handler.dart';
@@ -15,8 +14,9 @@ void main() {
 }
 
 enum FilterMethod {
-  Allow,
-  Deny,
+  allow,
+  deny,
+  ignore,
 }
 
 class FilterEntry {
@@ -24,7 +24,9 @@ class FilterEntry {
   String pattern;
   FilterMethod method;
   static FilterEntry fromJson(dynamic e) {
-    return FilterEntry(e["pattern"], (e["method"] as String) == "allow" ? FilterMethod.Allow : FilterMethod.Deny);
+    var methodString = e["method"] as String;
+    var method = FilterMethod.values.firstWhere((e) => e.toString().endsWith(methodString), orElse: () => FilterMethod.deny);
+    return FilterEntry(e["pattern"], method);
   }
 }
 
@@ -53,6 +55,8 @@ class MyHomePage extends StatefulWidget {
 
 class FindIntent extends Intent {}
 
+class FindNextIntent extends Intent {}
+
 class _MyHomePageState extends State<MyHomePage> {
   var items = [""];
   var scrollHandler;
@@ -71,8 +75,8 @@ class _MyHomePageState extends State<MyHomePage> {
   var searchFocusNode = FocusNode();
   var listFocusNode = FocusNode();
   var filters = [
-    FilterEntry("[FilterDriver]", FilterMethod.Deny),
-    FilterEntry("eicar", FilterMethod.Allow),
+    FilterEntry("[FilterDriver]", FilterMethod.deny),
+    FilterEntry("eicar", FilterMethod.allow),
   ];
 
   Future<List<String>> getContent() async {
@@ -84,8 +88,8 @@ class _MyHomePageState extends State<MyHomePage> {
       var filtered = lines.where((line) {
         if (line.isEmpty) return false;
         for (var f in filters) {
-          if (f.method == FilterMethod.Deny && line.contains(f.pattern)) return false;
-          if (f.method == FilterMethod.Allow && !line.contains(f.pattern)) return false;
+          if (f.method == FilterMethod.deny && line.contains(f.pattern)) return false;
+          if (f.method == FilterMethod.allow && !line.contains(f.pattern)) return false;
         }
         return true;
       });
@@ -131,10 +135,15 @@ class _MyHomePageState extends State<MyHomePage> {
       LogicalKeySet(LogicalKeyboardKey.arrowUp): ScrollLineUpIntent(),
       LogicalKeySet(LogicalKeyboardKey.arrowDown): ScrollLineDownIntent(),
       LogicalKeySet(LogicalKeyboardKey.keyF, LogicalKeyboardKey.control): FindIntent(),
+      LogicalKeySet(LogicalKeyboardKey.f3, LogicalKeyboardKey.control): FindNextIntent(),
     };
     actions = <Type, Action<Intent>>{
       FindIntent: CallbackAction(onInvoke: (Intent intent) {
         editSearchString();
+        return null;
+      }),
+      FindNextIntent: CallbackAction(onInvoke: (Intent intent) {
+        findNext();
         return null;
       }),
     };
@@ -173,15 +182,17 @@ class _MyHomePageState extends State<MyHomePage> {
     return false;
   }
 
-  void loadFilter(String content) {
+  Future loadFilter(String content) async {
     if (content == null) return;
     if (content == "") this.filters = [];
     var settings = json.decode(content);
     var jsonFilter = settings["filter"] as List<dynamic>;
     var f = jsonFilter.map((e) => FilterEntry.fromJson(e));
-    setState(() {
-      this.filters = f.toList();
-      if (filters.length == 1 && filters[0].pattern == "myFilteredString") filters.clear();
+    this.filters = f.toList();
+    if (filters.length == 1 && filters[0].pattern == "myFilteredString") filters.clear();
+    var values = await getContent();
+    this.setState(() {
+      items = values;
     });
   }
 
@@ -248,79 +259,105 @@ class _MyHomePageState extends State<MyHomePage> {
     return content;
   }
 
+  void reloadFilter(FilterEntry f, FilterMethod method) async {
+    await await Future.delayed(Duration(seconds: 1));
+    if (f.method == method) {
+      var content = json.encode(filters);
+
+      var settingFile = File(directory + "log_view.config");
+      await settingFile.writeAsString(content);
+      await loadFilter(content);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          title: Tooltip(message: "EndpointProtectionService", child: Text(widget.title)),
-          actions: <Widget>[
-            for (var f in filters)
-              Container(
-                  color: f.method == FilterMethod.Allow ? Colors.green : Colors.red,
+      appBar: AppBar(
+        title: Tooltip(message: "EndpointProtectionService", child: Text(widget.title)),
+        actions: <Widget>[
+          for (var f in filters)
+            GestureDetector(
+              onTap: () {
+                f.method = f.method == FilterMethod.ignore ? FilterMethod.deny : FilterMethod.ignore;
+                reloadFilter(f, f.method);
+              },
+              onSecondaryTap: () {
+                f.method = f.method == FilterMethod.ignore ? FilterMethod.allow : FilterMethod.ignore;
+                reloadFilter(f, f.method);
+              },
+              child: Container(
+                  color: f.method == FilterMethod.allow
+                      ? Colors.green
+                      : f.method == FilterMethod.deny
+                          ? Colors.red
+                          : Colors.grey[400],
                   alignment: Alignment.center,
                   margin: EdgeInsets.all(12),
                   padding: EdgeInsets.fromLTRB(10, 0, 10, 0),
                   child: Text(f.pattern, style: TextStyle())),
-            GestureDetector(
-                child: Icon(Icons.filter_list_alt),
-                onTap: () async {
-                  var settingFile = directory + "log_view.config";
-                  var content = await editSettingsFile(settingFile, "Edit filter", initial: """
+            ),
+          GestureDetector(
+              child: Icon(Icons.filter_list_alt),
+              onTap: () async {
+                var settingFile = directory + "log_view.config";
+                var content = await editSettingsFile(settingFile, "Edit filter", initial: """
 {
   "filter": [
     {"pattern":"myFilteredString", "method":"deny"}
   ]
 }
 """);
-                  loadFilter(content);
-                }),
-            Container(width: 60, child: Text("")),
-            editSearch
-                ? Container(
-                    padding: EdgeInsets.all(5),
-                    width: 200,
-                    height: 20,
-                    color: Color.fromARGB(255, 230, 230, 230),
-                    child: TextField(
-                      controller: findController,
-                      focusNode: searchFocusNode,
-                      onSubmitted: (s) {
-                        setState(() {
-                          search = s;
-                          editSearch = false;
-                          listFocusNode.requestFocus();
-                        });
-                      },
-                    ),
-                  )
-                : Row(
-                    children: [
-                      GestureDetector(
-                        child: Text(search),
-                        onDoubleTap: editSearchString,
-                      ),
-                      GestureDetector(
-                        child: Icon(
-                          Icons.find_in_page,
-                          size: 32,
-                        ),
-                        onTap: editSearchString,
-                      ),
-                      Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        GestureDetector(child: Icon(Icons.navigate_next), onTap: findNext),
-                        GestureDetector(
-                          child: Icon(Icons.navigate_before),
-                          onTap: findPrevious,
-                        )
-                      ])
-                    ],
+                await loadFilter(content);
+              }),
+          Container(width: 60, child: Text("")),
+          editSearch
+              ? Container(
+                  padding: EdgeInsets.all(5),
+                  width: 200,
+                  height: 20,
+                  color: Color.fromARGB(255, 230, 230, 230),
+                  child: TextField(
+                    controller: findController,
+                    focusNode: searchFocusNode,
+                    onSubmitted: (s) {
+                      setState(() {
+                        search = s;
+                        editSearch = false;
+                        listFocusNode.requestFocus();
+                        findNext();
+                      });
+                    },
                   ),
-            Container(width: 20, child: Text("")),
-            GestureDetector(
-              child: Icon(Icons.settings),
-              onTap: () async {
-                var fileName = path.join((await getApplicationDocumentsDirectory()).toString(), "log_view.config");
-                var content = await editSettingsFile(fileName, "Edit settings", initial: """
+                )
+              : Row(
+                  children: [
+                    GestureDetector(
+                      child: Text(search),
+                      onDoubleTap: editSearchString,
+                    ),
+                    GestureDetector(
+                      child: Icon(
+                        Icons.find_in_page,
+                        size: 32,
+                      ),
+                      onTap: editSearchString,
+                    ),
+                    Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      GestureDetector(child: Icon(Icons.navigate_next), onTap: findNext),
+                      GestureDetector(
+                        child: Icon(Icons.navigate_before),
+                        onTap: findPrevious,
+                      )
+                    ])
+                  ],
+                ),
+          Container(width: 20, child: Text("")),
+          GestureDetector(
+            child: Icon(Icons.settings),
+            onTap: () async {
+              var fileName = path.join((await getApplicationDocumentsDirectory()).toString(), "log_view.config");
+              var content = await editSettingsFile(fileName, "Edit settings", initial: """
 {
   "directory":"c:/temp/logs/",
   "files":[
@@ -331,59 +368,61 @@ class _MyHomePageState extends State<MyHomePage> {
   ]
 }
 """);
-                if (content == "") content = "{}";
-                if (content == null) return;
-                var settings = jsonDecode(content);
-                setState(() {
-                  directory = settings["directory"];
-                  files = (settings["files"] as List<dynamic>).cast<String>();
-                });
-              },
-            ),
-            Container(width: 60, child: Text("")),
-          ],
-        ),
-        body: FocusableActionDetector(
-          actions: actions,
-          shortcuts: shortcuts,
-          autofocus: true,
-          enabled: true,
-          focusNode: listFocusNode,
-          child: ScrollablePositionedList.builder(
-            initialScrollIndex: currentSearchIdx > 0 ? currentSearchIdx - 1 : 0,
-            padding: const EdgeInsets.all(20.0),
-            itemScrollController: scrollHandler.itemScrollController,
-            itemPositionsListener: scrollHandler.itemPositionsListener,
-            itemCount: items.length,
-            itemBuilder: (context, idx) {
-              if (currentSearchIdx == idx) {
-                return Container(
-                  height: 23,
-                  color: Colors.yellow,
+              if (content == "") content = "{}";
+              if (content == null) return;
+              var settings = jsonDecode(content);
+              setState(() {
+                directory = settings["directory"];
+                files = (settings["files"] as List<dynamic>).cast<String>();
+              });
+            },
+          ),
+          Container(width: 60, child: Text("")),
+        ],
+      ),
+      body: FocusableActionDetector(
+        actions: actions,
+        shortcuts: shortcuts,
+        autofocus: true,
+        enabled: true,
+        focusNode: listFocusNode,
+        child: ScrollablePositionedList.builder(
+          initialScrollIndex: currentSearchIdx > 0 ? currentSearchIdx - 1 : 0,
+          padding: const EdgeInsets.all(20.0),
+          itemScrollController: scrollHandler.itemScrollController,
+          itemPositionsListener: scrollHandler.itemPositionsListener,
+          itemCount: items.length,
+          itemBuilder: (context, idx) {
+            if (currentSearchIdx == idx) {
+              return Container(
+                height: 23,
+                color: Colors.yellow,
+                child: SelectableText(
+                  '${items[idx]}',
+                  style: TextStyle(color: getColor(items[idx])),
+                ),
+              );
+            } else {
+              return GestureDetector(
+                onDoubleTap: () {
+                  setState(() {
+                    scrollHandler.currentIdx = idx;
+                  });
+                },
+                child: Container(
+                  height: 24,
+                  color: getBackground(idx),
                   child: SelectableText(
                     '${items[idx]}',
                     style: TextStyle(color: getColor(items[idx])),
                   ),
-                );
-              } else {
-                return GestureDetector(
-                  onDoubleTap: () {
-                    setState(() {
-                      scrollHandler.currentIdx = idx;
-                    });
-                  },
-                  child: Container(
-                    height: 24,
-                    color: getBackground(idx),
-                    child: SelectableText(
-                      '${items[idx]}',
-                      style: TextStyle(color: getColor(items[idx])),
-                    ),
-                  ),
-                );
-              }
-            },
-          ),
-        ));
+                ),
+              );
+            }
+          },
+        ),
+      ),
+      persistentFooterButtons: [Text("${scrollHandler.currentIdx}/${items.length}")],
+    );
   }
 }

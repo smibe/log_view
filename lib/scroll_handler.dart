@@ -53,10 +53,16 @@ class ScrollHandler {
 
   void scrollToTop() {
     itemScrollController.jumpTo(index: 0);
+    setState(() {
+      currentIdx = 0;
+    });
   }
 
   void scrollToBottom() {
-    itemScrollController.jumpTo(index: getItemCount());
+    itemScrollController.jumpTo(index: getItemCount() - 1);
+    setState(() {
+      currentIdx = getItemCount() - 1;
+    });
   }
 
   void scrollLineUp() {
