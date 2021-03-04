@@ -28,6 +28,16 @@ class FilterEntry {
     var method = FilterMethod.values.firstWhere((e) => e.toString().endsWith(methodString), orElse: () => FilterMethod.deny);
     return FilterEntry(e["pattern"], method);
   }
+
+  static dynamic toJson(FilterEntry f) {
+    Map<String, String> result = Map<String, String>();
+    var methodString = f.method.toString();
+    var idx = methodString.indexOf('.');
+    if (idx >= 0) methodString = methodString.substring(idx);
+    result["method"] = methodString;
+    result["pattern"] = f.pattern;
+    return result;
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -260,11 +270,17 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void reloadFilter(FilterEntry f, FilterMethod method) async {
-    await await Future.delayed(Duration(seconds: 1));
+    await await Future.delayed(Duration(milliseconds: 400));
     if (f.method == method) {
-      var content = json.encode(filters);
+      var filterArray = filters.map((e) => FilterEntry.toJson(e));
+      var filterList = List<dynamic>.empty(growable: true);
+      for (var f in filterArray) filterList.add(f);
 
       var settingFile = File(directory + "log_view.config");
+      var jsonContent = json.decode(await settingFile.readAsString());
+      jsonContent["filter"] = filterList;
+      var encoder = new JsonEncoder.withIndent("  ");
+      var content = encoder.convert(jsonContent);
       await settingFile.writeAsString(content);
       await loadFilter(content);
     }
