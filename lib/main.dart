@@ -438,7 +438,7 @@ class _MyHomePageState extends State<MyHomePage> {
           },
         ),
       ),
-      persistentFooterButtons: [Text("${scrollHandler.currentIdx}/${items.length}")],
+      persistentFooterButtons: [Text("${scrollHandler.currentIdx + 1}/${items.length}")],
     );
   }
 }

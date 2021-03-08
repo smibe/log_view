@@ -41,6 +41,7 @@ class ScrollHandler {
     int idx = itemPositionsListener.itemPositions.value.first.index + count * 3 ~/ 4;
     if (idx > getItemCount() - 1) idx = getItemCount() - 1;
     itemScrollController.jumpTo(index: idx);
+    setState(() => currentIdx = idx);
   }
 
   void scrollPageUp() {
@@ -49,6 +50,7 @@ class ScrollHandler {
     int idx = itemPositionsListener.itemPositions.value.first.index - count * 3 ~/ 4;
     if (idx < 0) idx = 0;
     itemScrollController.jumpTo(index: idx);
+    setState(() => currentIdx = idx);
   }
 
   void scrollToTop() {
@@ -70,9 +72,7 @@ class ScrollHandler {
     if (idx < 0) idx = 0;
 
     if (idx < itemPositionsListener.itemPositions.value.first.index) itemScrollController.jumpTo(index: idx);
-    setState(() {
-      currentIdx = idx;
-    });
+    setState(() => currentIdx = idx);
   }
 
   void scrollLineDown() {
